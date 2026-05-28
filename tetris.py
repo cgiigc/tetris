@@ -1,11 +1,66 @@
+"""
+==========================================================
+Program Name : Tetris
+Author       : Corey Imray
+Student ID   : 0218324
+Course       : Computing - Software Development 25-HCCOMS07FT1
+Assessor     : Stewart Livingstone
+Date Created : 01/05/2026
+Last Updated : 28/05/2026
+
+Description:
+    A replica of Tetris in PyGame. With basic functionality - collision, rotation, edge detection etc.
+
+Features / Functionality:
+    - Rotation system
+    - Collision detection
+    - OOP system with board and tiles
+    - 40 lines to win
+    - If you overflow you lose
+
+Inputs:
+    - Left arrow to move left (you can hold)
+    - Right arrow to move right (you can hold)
+    - Down arrow to move down (you can hold)
+    - Up arrow to rotate
+    - Space to hard drop
+
+Outputs:
+    - Window
+    - Sprites
+
+Dependencies / Requirements:
+    - PyGame
+
+Assumptions / Limitations:
+    - This is NOT accurate to recognised Tetris implementations.
+    - No 'wall kicks'
+    - No timer or statistics
+    - If piece is at bottom of tower, and you rotate it, it collides, it jumps to the top of the tower
+    - Line clearing may not happen all at once: You may see one line get cleared, and then the next on the next frame
+
+Special Notes:
+    - Ensure the .png files are in the same directory as this .py file
+==========================================================
+"""
+
+# Import
+
 import pygame
 import sys
+import os
 from pygame.locals import *
 
 import random
 import math
 
 import copy
+
+# Change directory to here so that program recognises png files in this directory
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+# Initialise
 
 pygame.init()
 
@@ -14,8 +69,8 @@ FramePerSec = pygame.time.Clock()
 
 tiles = ["redtile.png", "orangetile.png", "yellowtile.png", "greentile.png", "darkbluetile.png", "lightbluetile.png", "purpletile.png"]
 
+# Pieces stored as 2d arrays, starting from bottom left
 pieces = [[[0,0,0],[0,1,1],[1,1,0],[1,1]], [[0,0,0],[2,2,2],[0,0,2],[1,1]], [[0,0,0,0],[0,3,3,0],[0,3,3,0],[1.5, 1.5]], [[0,0,0],[4,4,0],[0,4,4],[1,1]], [[0,0,0],[5,5,5],[5,0,0],[1,1]], [[0,0,0,0],[0,0,0,0],[6,6,6,6],[0,0,0,0],[1.5,1.5]], [[0,0,0],[7,7,7],[0,7,0],[1,1]]]
-wallKicks = [[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[[0,0],[+2,0],[-1,0],[+2,+1],[-1,-2]],[[0,0],[+1,0],[-2,0],[+1,-2],[-2,+1]]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]]]
 
 rotated = False
 
@@ -24,22 +79,17 @@ rightmostTileArray = []
 bottommostTileArray = []
 topmostTileArray = []
 
-# 10 board tiles, 1 board tile = 34x34, so multiply by 10 = 340
-# + 11, to account for the gaps between each tile, gives us 351
-
-# The process is the same for the height, 20 board tiles, 1 board tile = 34x34, so multiply by 20 = 680
-# + 21, to account for the gaps between each tile, gives us 701
-
-# Divide both these values by 2, so we can centre it
-
 boardSpawnX = 148.5
 boardSpawnY = 313.5
 
+# Fullscreen window
 DISPLAYSURF = pygame.display.set_mode((0, 0))
 DISPLAYSURF.fill((50, 50, 50))
 pygame.display.set_caption("Tetris")
 
+# Define board sprite
 class Board(pygame.sprite.Sprite):
+    # Initialise all variables
     def __init__(self):
         super().__init__()
         self.image = pygame.image.load("boardtile.png").convert_alpha()
@@ -52,6 +102,7 @@ class Board(pygame.sprite.Sprite):
         self.topmostTilePermArray = [0 for _ in range(10)]
         self.rotationCount = 0
 
+    # Render pieces onto the board perm state
     def renderPiece(self):
         for i in range(len(self.currentPiece)-1):
             for j in range(len(self.currentPiece[0])):
@@ -60,6 +111,7 @@ class Board(pygame.sprite.Sprite):
 
         self.topmostTilePermArray = topmostTilePerm()
 
+    # Draw the sprite on the window
     def draw(self, surface):
         for w in range(10):
             for h in range(20):
@@ -67,29 +119,39 @@ class Board(pygame.sprite.Sprite):
                 self.rect.center = (DISPLAYSURF.get_width()/2-boardSpawnX+33*w, DISPLAYSURF.get_height()/2-boardSpawnY+33*h)
                 surface.blit(self.image, self.rect)
 
+# Define tile or minomino
 class Tile(pygame.sprite.Sprite):
+    # Initialise all variables
     def __init__(self, tileValue):
         super().__init__()
         self.image = pygame.image.load(tiles[tileValue-1]).convert()
         self.rect = self.image.get_rect()
     
+    # Draw the sprite on the window, with a specified x and y position
     def draw(self, surface, j, i):
         self.rect.center = (DISPLAYSURF.get_width()/2-boardSpawnX+33*i, DISPLAYSURF.get_height()/2+boardSpawnY-33*j)
         surface.blit(self.image, self.rect)
 
+# Rotation
 def rotate(x, y, pivotValues):
+    # Calculate destination tile after rotation is done (uses linear algebra)
     rotated = [int((round((x-pivotValues[0])*math.cos(math.radians(-90))-(y-pivotValues[1])*math.sin(math.radians(-90))+pivotValues[0], 10))), int((round((x-pivotValues[0])*math.sin(math.radians(-90))+(y-pivotValues[1])*math.cos(math.radians(-90)), 10))+pivotValues[1])]
     
+    # If the tile is not equal to the pivot, and the tile has not already been rotated, and it is not an O piece (cannot be rotated)
     if not [x, y] == pivotValues and not [x, y] in board.rotatedTiles and not board.pieceIndex == 2:
 
+        # Call again if the tile is there (enter a recursion)
         if board.currentPiece[rotated[1]][rotated[0]] > 0:
             rotate(rotated[0], rotated[1], pivotValues)
         
+        # Set old tile to 0
         board.currentPiece[y][x] = 0
 
+        # Set rotated tile to piece index
         board.currentPiece[rotated[1]][rotated[0]] = board.pieceIndex+1
         board.rotatedTiles.append([rotated[0], rotated[1]])
 
+# Get leftmost tile of each row
 def leftmostTile():
     array = []
     leftmostPiece = 999
@@ -104,6 +166,7 @@ def leftmostTile():
 
     return array
 
+# Get rightmost tile of each row
 def rightmostTile():
     array = []
     rightmostPiece = -999
@@ -117,6 +180,7 @@ def rightmostTile():
 
     return array
 
+# Get bottommost tile of each column
 def bottommostTile():
     array = []
     bottommostPiece = 999
@@ -132,6 +196,7 @@ def bottommostTile():
 
     return array
 
+# Get topmost tile of each column
 def topmostTile():
     array = []
     topmostPiece = -999
@@ -145,6 +210,8 @@ def topmostTile():
         topmostPiece = -999
 
     return array
+
+# Get the topmost tile of each column in the state
 
 def topmostTilePerm():
     array = []
@@ -161,6 +228,7 @@ def topmostTilePerm():
 
     return array
 
+# Check if pos below this would collide with tile
 def checkCollision():
     canDrop = True
                 
@@ -185,6 +253,8 @@ def checkCollision():
     
     return canDrop
 
+# Initialise variables
+
 board = Board()
 currentTile = Tile(0)
 permTile = Tile(0)
@@ -208,26 +278,36 @@ linesCleared = 0
 
 font = pygame.font.SysFont('Arial',100)
 
+# Set gravity timer (every second)
 pygame.time.set_timer(gravity, 1000)
 
+# Game loop
 while True:
     if gameOver == False:
         for event in pygame.event.get():
+            # Every second
             if event.type == gravity:
+                # If not at bottom floor
                 if board.piecePos[1] + min(bottommostTileArray) > 0:
+                    # Check for collision
                     canDrop = checkCollision()
 
+                    # If can drop
                     if canDrop:
                         board.piecePos[1] = board.piecePos[1]-1
-                        
+            
+            # If close program
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
 
+        # Fill surface with dark grey
         DISPLAYSURF.fill((50, 50, 50))
 
+        # Draw the board sprite onto the surface
         board.draw(DISPLAYSURF)
 
+        # If there is not a piece selected
         if tileSelected == False:
             randIndex = random.randint(0, len(tiles)-1)
             tempArray = pieces[randIndex]
@@ -240,8 +320,10 @@ while True:
 
             leftmostTileArray, rightmostTileArray, bottommostTileArray, topmostTileArray = leftmostTile(), rightmostTile(), bottommostTile(), topmostTile()
 
+        # Get all pressed key binds
         keys = pygame.key.get_pressed()
         
+        # If up arrow is pressed
         if keys[K_UP] and not rotated:
             rotated = True
             for i in range(len(board.currentPiece)-1):
@@ -253,6 +335,7 @@ while True:
 
                         rotate(j, i, pivotValues)
 
+            # If there is collision after rotation, this will be set to True
             collision = False
 
             for i in range(len(board.currentPiece) - 1):
@@ -267,7 +350,8 @@ while True:
                         if boardY < 25 and board.permState[boardY][boardX] > 0:
                             collision = True
                             break
-                    
+                
+            # While there is collision with a tile on the board
             while collision:
                 collision = False
                 board.piecePos[1] = board.piecePos[1]+1
