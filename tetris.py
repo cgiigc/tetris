@@ -15,6 +15,7 @@ FramePerSec = pygame.time.Clock()
 tiles = ["redtile.png", "orangetile.png", "yellowtile.png", "greentile.png", "darkbluetile.png", "lightbluetile.png", "purpletile.png"]
 
 pieces = [[[0,0,0],[0,1,1],[1,1,0],[1,1]], [[0,0,0],[2,2,2],[0,0,2],[1,1]], [[0,0,0,0],[0,3,3,0],[0,3,3,0],[1.5, 1.5]], [[0,0,0],[4,4,0],[0,4,4],[1,1]], [[0,0,0],[5,5,5],[5,0,0],[1,1]], [[0,0,0,0],[0,0,0,0],[6,6,6,6],[0,0,0,0],[1.5,1.5]], [[0,0,0],[7,7,7],[0,7,0],[1,1]]]
+wallKicks = [[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]],[[[0,0],[+2,0],[-1,0],[+2,+1],[-1,-2]],[[0,0],[+1,0],[-2,0],[+1,-2],[-2,+1]]],[[0,0],[+1,0],[+1,-1],[0,+2],[+1,+2]]]
 
 rotated = False
 
@@ -44,19 +45,20 @@ class Board(pygame.sprite.Sprite):
         self.image = pygame.image.load("boardtile.png").convert_alpha()
         self.rect = self.image.get_rect()
         self.pieceIndex = 0
-        self.permState = [[0 for _ in range(10)] for _ in range(20)]
+        self.permState = [[0 for _ in range(10)] for _ in range(25)]
         self.currentPiece = []
         self.piecePos = []
         self.rotatedTiles = []
-        self.heights = [0 for _ in range(10)]
+        self.topmostTilePermArray = [0 for _ in range(10)]
+        self.rotationCount = 0
 
     def renderPiece(self):
         for i in range(len(self.currentPiece)-1):
             for j in range(len(self.currentPiece[0])):
                 if self.currentPiece[i][j] > 0:
                     self.permState[self.piecePos[1]+i][self.piecePos[0]+j] = self.currentPiece[i][j]
-                if i == 0:
-                    self.heights[self.piecePos[0]+j] = self.heights[self.piecePos[0]+min(j, rightmostTileArray[j])] + topmostTileArray[j] + 1
+
+        self.topmostTilePermArray = topmostTilePerm()
 
     def draw(self, surface):
         for w in range(10):
@@ -77,23 +79,16 @@ class Tile(pygame.sprite.Sprite):
 
 def rotate(x, y, pivotValues):
     rotated = [int((round((x-pivotValues[0])*math.cos(math.radians(-90))-(y-pivotValues[1])*math.sin(math.radians(-90))+pivotValues[0], 10))), int((round((x-pivotValues[0])*math.sin(math.radians(-90))+(y-pivotValues[1])*math.cos(math.radians(-90)), 10))+pivotValues[1])]
-
-    print(rotated)
     
     if not [x, y] == pivotValues and not [x, y] in board.rotatedTiles and not board.pieceIndex == 2:
 
         if board.currentPiece[rotated[1]][rotated[0]] > 0:
-            print(board.currentPiece)
-
-            print(rotated[0], rotated[1], board.currentPiece)
-            print("Yes")
             rotate(rotated[0], rotated[1], pivotValues)
         
         board.currentPiece[y][x] = 0
 
         board.currentPiece[rotated[1]][rotated[0]] = board.pieceIndex+1
         board.rotatedTiles.append([rotated[0], rotated[1]])
-        print(board.currentPiece)
 
 def leftmostTile():
     array = []
@@ -151,6 +146,45 @@ def topmostTile():
 
     return array
 
+def topmostTilePerm():
+    array = []
+
+    for j in range(10):
+
+        topmostPiece = -999
+
+        for i in range(25):
+            if board.permState[i][j] > 0:
+                topmostPiece = i
+
+        array.append(topmostPiece)
+
+    return array
+
+def checkCollision():
+    canDrop = True
+                
+    # Check if the piece is already at the bottom floor
+    if board.piecePos[1] + min(bottommostTileArray) <= 0:
+        canDrop = False
+    else:
+        # Check for collision with tiles already on the board
+        # We check every active tile in the current piece
+        for i in range(len(board.currentPiece) - 1):
+            for j in range(len(board.currentPiece[i])):
+                if board.currentPiece[i][j] > 0:
+                    boardX = board.piecePos[0] + j
+                    # Check the tile exactly below this one (-1)
+                    boardY = board.piecePos[1] + i - 1
+                    
+                    if boardY < 25 and board.permState[boardY][boardX] > 0:
+                        canDrop = False
+                        break
+            if not canDrop:
+                break
+    
+    return canDrop
+
 board = Board()
 currentTile = Tile(0)
 permTile = Tile(0)
@@ -164,118 +198,243 @@ debounce = False
 debounceHD = False
 
 lastDtMove = 0
+lastDtRotate = 0
+
+gameOver = False
+count = 0
+
+highest = 20
+linesCleared = 0
+
+font = pygame.font.SysFont('Arial',100)
 
 pygame.time.set_timer(gravity, 1000)
 
 while True:
-    for event in pygame.event.get():
-        if event.type == gravity:
-            if board.piecePos[1] + min(bottommostTileArray) > 0:
-                board.piecePos[1] = board.piecePos[1]-1
-                print(bottommostTileArray)
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+    if gameOver == False:
+        for event in pygame.event.get():
+            if event.type == gravity:
+                if board.piecePos[1] + min(bottommostTileArray) > 0:
+                    canDrop = checkCollision()
 
-    DISPLAYSURF.fill((50, 50, 50))
+                    if canDrop:
+                        board.piecePos[1] = board.piecePos[1]-1
+                        
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
-    board.draw(DISPLAYSURF)
+        DISPLAYSURF.fill((50, 50, 50))
 
-    if tileSelected == False:
-        randIndex = random.randint(0, len(tiles)-1)
-        tempArray = pieces[randIndex]
-        board.currentPiece = copy.deepcopy(tempArray)
-        board.pieceIndex = randIndex
-        board.piecePos = [len(board.currentPiece)-math.floor(len(board.currentPiece)%4)-1, 21-math.floor(len(board.currentPiece)%4)]
+        board.draw(DISPLAYSURF)
 
-        currentTile = Tile(randIndex+1)
-        tileSelected = True
+        if tileSelected == False:
+            randIndex = random.randint(0, len(tiles)-1)
+            tempArray = pieces[randIndex]
+            board.currentPiece = copy.deepcopy(tempArray)
+            board.pieceIndex = randIndex
+            board.piecePos = [len(board.currentPiece)-math.floor(len(board.currentPiece)%4)-1, 21-math.floor(len(board.currentPiece)%4)]
 
-        leftmostTileArray, rightmostTileArray, bottommostTileArray, topmostTileArray = leftmostTile(), rightmostTile(), bottommostTile(), topmostTile()
+            currentTile = Tile(randIndex+1)
+            tileSelected = True
 
-    keys = pygame.key.get_pressed()
-    
-    if keys[K_UP] and not rotated:
-        rotated = True
-        for i in range(len(board.currentPiece)-1):
-            for j in range(len(board.currentPiece[i])):
-                value = board.currentPiece[i][j]
+            leftmostTileArray, rightmostTileArray, bottommostTileArray, topmostTileArray = leftmostTile(), rightmostTile(), bottommostTile(), topmostTile()
 
-                print("VALUE:", value)
-                
-                if value > 0:
-                    pivotValues = board.currentPiece[len(board.currentPiece)-1]
-
-                    rotate(j, i, pivotValues)
+        keys = pygame.key.get_pressed()
+        
+        if keys[K_UP] and not rotated:
+            rotated = True
+            for i in range(len(board.currentPiece)-1):
+                for j in range(len(board.currentPiece[i])):
+                    value = board.currentPiece[i][j]
                     
-        leftmostTileArray, rightmostTileArray, bottommostTileArray, topmostTileArray = leftmostTile(), rightmostTile(), bottommostTile(), topmostTile()
+                    if value > 0:
+                        pivotValues = board.currentPiece[len(board.currentPiece)-1]
 
-        if board.piecePos[0] + min(leftmostTileArray) < 0:
-            board.piecePos[0] = 0
-        elif board.piecePos[0] + max(rightmostTileArray) > 9:
-            board.piecePos[0] = 10 - len(board.currentPiece[0])
-        
-        if board.piecePos[1] + min(bottommostTileArray) < 0:
-            board.piecePos[1] = 0 + min(bottommostTileArray)
-        
-    elif not keys[K_UP]:
-        rotated = False
+                        rotate(j, i, pivotValues)
 
-        board.rotatedTiles = []
+            collision = False
 
-    if keys[K_LEFT]:
-        if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + min(leftmostTileArray) > 0:
-            lastDtMove = 0
-            if not keys[K_RIGHT]:
-                board.piecePos = [board.piecePos[0]-1, board.piecePos[1]]
-    if keys[K_RIGHT]:
-        if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + max(rightmostTileArray) < 9:
-            lastDtMove = 0
-            if not keys[K_LEFT]:
-                board.piecePos = [board.piecePos[0]+1, board.piecePos[1]]
-    if keys[K_DOWN]:
-        if not debounce and board.piecePos[1] + min(bottommostTileArray) > 0:
-            board.piecePos = [board.piecePos[0], board.piecePos[1]-1]
+            for i in range(len(board.currentPiece) - 1):
+                for j in range(len(board.currentPiece[i])):
+                    if board.currentPiece[i][j] > 0:
+                        boardX = board.piecePos[0] + j
+                        boardY = board.piecePos[1] + i
 
-            pygame.time.set_timer(gravity, 100)
-            debounce = True
-    elif debounce:
-        pygame.time.set_timer(gravity, 1000)
-        debounce = False
+                        if boardX > 9:
+                            break
+                        
+                        if boardY < 25 and board.permState[boardY][boardX] > 0:
+                            collision = True
+                            break
+                    
+            while collision:
+                collision = False
+                board.piecePos[1] = board.piecePos[1]+1
+                for i in range(len(board.currentPiece) - 1):
+                    for j in range(len(board.currentPiece[i])):
+                        if board.currentPiece[i][j] > 0:
+                            boardX = board.piecePos[0] + j
+                            boardY = board.piecePos[1] + i
+                            
+                            if boardY < 25 and board.permState[boardY][boardX] > 0:
+                                collision = True
+                                break
+                        
+            leftmostTileArray, rightmostTileArray, bottommostTileArray, topmostTileArray = leftmostTile(), rightmostTile(), bottommostTile(), topmostTile()
 
-    if (not keys[K_LEFT]) and (not keys[K_RIGHT]):
-        deltaTime = 0
+            lastDtRotate = 0
 
-    if keys[K_SPACE]:
-        if not debounceHD:
-            print(board.heights[board.piecePos[0]+min(leftmostTileArray):board.piecePos[0]+max(rightmostTileArray)+1], "heights")
-            board.piecePos[1] = 0 - min(bottommostTileArray) + max(board.heights[board.piecePos[0]+min(leftmostTileArray):board.piecePos[0]+max(rightmostTileArray)+1])
-            board.renderPiece()
+            if board.piecePos[0] + min(leftmostTileArray) < 0:
+                board.piecePos[0] = 0
+            elif board.piecePos[0] + max(rightmostTileArray) > 9:
+                board.piecePos[0] = 9 - len(board.currentPiece[0])
+            
+            if board.piecePos[1] + min(bottommostTileArray) < 0:
+                board.piecePos[1] = 0 + min(bottommostTileArray)
+            
+        elif not keys[K_UP]:
+            rotated = False
 
-            debounceHD = True
+            board.rotatedTiles = []
 
-            tileSelected = False
-    else:
-        debounceHD = False
+        if keys[K_LEFT]:
+            if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + min(leftmostTileArray) > 0:
+                lastDtMove = 0
+                if not keys[K_RIGHT]:
+                    board.piecePos = [board.piecePos[0]-1, board.piecePos[1]]
+                    for i in range(len(board.currentPiece)-1):
+                        for j in range(len(board.currentPiece[0])):
+                            if board.piecePos[1] <= 25:
+                                if board.currentPiece[i][j] > 0 and board.permState[board.piecePos[1]+i][board.piecePos[0]+j] > 0:
+                                    board.piecePos = [board.piecePos[0]+1, board.piecePos[1]]
+        if keys[K_RIGHT]:
+            if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + max(rightmostTileArray) < 9:
+                lastDtMove = 0
+                if not keys[K_LEFT]:
+                    board.piecePos = [board.piecePos[0]+1, board.piecePos[1]]
+                    for i in range(len(board.currentPiece)-1):
+                        for j in range(len(board.currentPiece[0])):
+                            if board.piecePos[1] <= 25:
+                                if board.currentPiece[i][j] > 0 and board.permState[board.piecePos[1]+i][board.piecePos[0]+j] > 0:
+                                    board.piecePos = [board.piecePos[0]-1, board.piecePos[1]]
+        if keys[K_DOWN]:
+            if not debounce and board.piecePos[1] + min(bottommostTileArray) > 0:
+                canDrop = checkCollision()
 
-    if tileSelected:
-        for i in range(len(board.currentPiece)-1):
-            for j in range(len(board.currentPiece[i])):
-                if board.currentPiece[i][j] == 0:
+                if canDrop:
+                    board.piecePos = [board.piecePos[0], board.piecePos[1]-1]
+
+                pygame.time.set_timer(gravity, 100)
+                debounce = True
+        elif debounce:
+            pygame.time.set_timer(gravity, 1000)
+            debounce = False
+
+        if (not keys[K_LEFT]) and (not keys[K_RIGHT]):
+            deltaTime = 0
+
+        if keys[K_SPACE]:
+            if not debounceHD:
+                debounceHD = True
+                
+                # Keep moving the piece down until it hits something
+                while True:
+                    canDrop = checkCollision()
+
+                    if canDrop:
+                        board.piecePos[1] -= 1
+                    else:
+                        break # Hit the floor or a piece
+
+                # Lock the piece and reset
+                board.renderPiece()
+                tileSelected = False
+        else:
+            debounceHD = False
+
+        if tileSelected:
+            for i in range(len(board.currentPiece)-1):
+                for j in range(len(board.currentPiece[i])):
+                    if board.currentPiece[i][j] == 0:
+                        continue
+
+                    currentTile.draw(DISPLAYSURF, i+board.piecePos[1], j+board.piecePos[0])
+
+        for i in range(10):
+            for j in range(25):
+                if board.permState[j][i] == 0:
                     continue
 
-                currentTile.draw(DISPLAYSURF, i+board.piecePos[1], j+board.piecePos[0])
+                permTile = Tile(board.permState[j][i])
+                permTile.draw(DISPLAYSURF, j, i)
 
-    for i in range(10):
-        for j in range(20):
-            if board.permState[j][i] == 0:
-                continue
+        deltaTime = deltaTime + FramePerSec.get_time()/1000
+        lastDtMove = lastDtMove + FramePerSec.get_time()/1000
+        lastDtRotate = lastDtRotate + FramePerSec.get_time()/1000
 
-            permTile = Tile(board.permState[j][i])
-            permTile.draw(DISPLAYSURF, j, i)
+        if max(board.topmostTilePermArray) > 20:
+            gameOver = True
 
-    deltaTime = deltaTime + FramePerSec.get_time()/1000
-    lastDtMove = lastDtMove + FramePerSec.get_time()/1000
+        text = font.render(str(max(40-linesCleared, 0)),True,(255,255,255))
+        textrect = text.get_rect()
+
+        if linesCleared > 39:
+            gameOver = True
+
+        textrect.center = (DISPLAYSURF.get_width()/2, DISPLAYSURF.get_height()/2+375)
+
+        if highest > board.piecePos[1]:
+            count = 0
+            lastDtRotate = 0
+            lastDtMove = 0
+
+        canDrop = checkCollision()
+
+        if not canDrop:
+            if lastDtMove > 0.5 or lastDtRotate > 0.5 or count > 14:
+                board.renderPiece()
+                tileSelected = False
+
+        lines = []
+
+        for i in range(len(board.permState)):
+            if min(board.permState[i]) > 0:
+                lines.append(i)
+
+        for row in reversed(lines):
+            del board.permState[row]
+            board.permState.append([0 for _ in range(10)])
+            linesCleared += 1
+
+        highest = board.piecePos[1]
+    else:
+        if max(board.topmostTilePermArray) > 20:
+            image = pygame.image.load("gameover.png").convert_alpha()
+            rectImage = image.get_rect()
+            image = pygame.transform.scale(image, (1000, 1000))
+            
+            rectImage.center = (DISPLAYSURF.get_width()/2-500, DISPLAYSURF.get_height()/2-500)
+            DISPLAYSURF.blit(image, rectImage)
+    
+            deltaTime = deltaTime + FramePerSec.get_time()/1000
+
+            if deltaTime > 3:
+                break
+        else:
+            image = pygame.image.load("gamewin.png").convert_alpha()
+            rectImage = image.get_rect()
+            image = pygame.transform.scale(image, (1000, 1000))
+            
+            rectImage.center = (DISPLAYSURF.get_width()/2-500, DISPLAYSURF.get_height()/2-500)
+            DISPLAYSURF.blit(image, rectImage)
+    
+            deltaTime = deltaTime + FramePerSec.get_time()/1000
+
+            if deltaTime > 3:
+                break
+
+    DISPLAYSURF.blit(text, textrect)
     
     pygame.display.update()
     FramePerSec.tick(FPS)
