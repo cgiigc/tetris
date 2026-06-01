@@ -1,49 +1,3 @@
-"""
-==========================================================
-Program Name : Tetris
-Author       : Corey Imray
-Student ID   : 0218324
-Course       : Computing - Software Development 25-HCCOMS07FT1
-Assessor     : Stewart Livingstone
-Date Created : 01/05/2026
-Last Updated : 28/05/2026
-
-Description:
-    A replica of Tetris in PyGame. With basic functionality - collision, rotation, edge detection etc.
-
-Features / Functionality:
-    - Rotation system
-    - Collision detection
-    - OOP system with board and tiles
-    - 40 lines to win
-    - If you overflow you lose
-
-Inputs:
-    - Left arrow to move left (you can hold)
-    - Right arrow to move right (you can hold)
-    - Down arrow to move down (you can hold)
-    - Up arrow to rotate
-    - Space to hard drop
-
-Outputs:
-    - Window
-    - Sprites
-
-Dependencies / Requirements:
-    - PyGame
-
-Assumptions / Limitations:
-    - This is NOT accurate to recognised Tetris implementations.
-    - No 'wall kicks'
-    - No timer or statistics
-    - If piece is at bottom of tower, and you rotate it, it collides, it jumps to the top of the tower
-    - Line clearing may not happen all at once: You may see one line get cleared, and then the next on the next frame
-
-Special Notes:
-    - Ensure the .png files are in the same directory as this .py file
-==========================================================
-"""
-
 # Import
 
 import pygame
@@ -369,6 +323,7 @@ while True:
 
             lastDtRotate = 0
 
+            # Kick against wall
             if board.piecePos[0] + min(leftmostTileArray) < 0:
                 board.piecePos[0] = 0
             elif board.piecePos[0] + max(rightmostTileArray) > 9:
@@ -376,12 +331,14 @@ while True:
             
             if board.piecePos[1] + min(bottommostTileArray) < 0:
                 board.piecePos[1] = 0 + min(bottommostTileArray)
-            
+        
+        # Allow rotation again
         elif not keys[K_UP]:
             rotated = False
 
             board.rotatedTiles = []
 
+        # Move to the left cleanly, if collision, do not move further
         if keys[K_LEFT]:
             if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + min(leftmostTileArray) > 0:
                 lastDtMove = 0
@@ -392,6 +349,8 @@ while True:
                             if board.piecePos[1] <= 25:
                                 if board.currentPiece[i][j] > 0 and board.permState[board.piecePos[1]+i][board.piecePos[0]+j] > 0:
                                     board.piecePos = [board.piecePos[0]+1, board.piecePos[1]]
+        
+        # Move to the right cleanly, if collision, do not move further
         if keys[K_RIGHT]:
             if (deltaTime < 0.02 or (deltaTime > 0.15 and lastDtMove > 0.025)) and board.piecePos[0] + max(rightmostTileArray) < 9:
                 lastDtMove = 0
@@ -402,6 +361,8 @@ while True:
                             if board.piecePos[1] <= 25:
                                 if board.currentPiece[i][j] > 0 and board.permState[board.piecePos[1]+i][board.piecePos[0]+j] > 0:
                                     board.piecePos = [board.piecePos[0]-1, board.piecePos[1]]
+
+        # Check for collision when moving down
         if keys[K_DOWN]:
             if not debounce and board.piecePos[1] + min(bottommostTileArray) > 0:
                 canDrop = checkCollision()
@@ -437,6 +398,7 @@ while True:
         else:
             debounceHD = False
 
+        # If a tile is selected, draw out all the tiles of current piece
         if tileSelected:
             for i in range(len(board.currentPiece)-1):
                 for j in range(len(board.currentPiece[i])):
@@ -444,7 +406,8 @@ while True:
                         continue
 
                     currentTile.draw(DISPLAYSURF, i+board.piecePos[1], j+board.piecePos[0])
-
+        
+        # Render out the state of the board
         for i in range(10):
             for j in range(25):
                 if board.permState[j][i] == 0:
@@ -457,29 +420,37 @@ while True:
         lastDtMove = lastDtMove + FramePerSec.get_time()/1000
         lastDtRotate = lastDtRotate + FramePerSec.get_time()/1000
 
+        # If player goes above board, game over!
         if max(board.topmostTilePermArray) > 20:
             gameOver = True
 
+        # Update line counter
         text = font.render(str(max(40-linesCleared, 0)),True,(255,255,255))
         textrect = text.get_rect()
 
+        # If the player has reached 40 lines, game over!
         if linesCleared > 39:
             gameOver = True
 
+        # Put text at bottom of screen
         textrect.center = (DISPLAYSURF.get_width()/2, DISPLAYSURF.get_height()/2+375)
 
+        # If the piece has gone down, reset the counter and last delta time
         if highest > board.piecePos[1]:
             count = 0
             lastDtRotate = 0
             lastDtMove = 0
 
+        # Check if collision
         canDrop = checkCollision()
 
+        # If it has been 0.5 seconds since the piece has last been rotated, or the piece has been moved 15 times, render the piecce
         if not canDrop:
             if lastDtMove > 0.5 or lastDtRotate > 0.5 or count > 14:
                 board.renderPiece()
                 tileSelected = False
 
+        # Line clear
         lines = []
 
         for i in range(len(board.permState)):
@@ -493,6 +464,7 @@ while True:
 
         highest = board.piecePos[1]
     else:
+        # Load and display game over
         if max(board.topmostTilePermArray) > 20:
             image = pygame.image.load("gameover.png").convert_alpha()
             rectImage = image.get_rect()
@@ -503,9 +475,12 @@ while True:
     
             deltaTime = deltaTime + FramePerSec.get_time()/1000
 
+            # Wait 3 seconds and exit the program
             if deltaTime > 3:
                 break
-        else:
+        else: # If the board is still below 20
+            
+            # Load and display game win
             image = pygame.image.load("gamewin.png").convert_alpha()
             rectImage = image.get_rect()
             image = pygame.transform.scale(image, (1000, 1000))
@@ -515,10 +490,13 @@ while True:
     
             deltaTime = deltaTime + FramePerSec.get_time()/1000
 
+            # Wait 3 seconds and exit the program
             if deltaTime > 3:
                 break
-
+    
+    # Display text
     DISPLAYSURF.blit(text, textrect)
     
+    # Update screen
     pygame.display.update()
     FramePerSec.tick(FPS)
